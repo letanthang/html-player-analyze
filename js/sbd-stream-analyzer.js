@@ -4,8 +4,6 @@
     if (window.SBDSA)
         return;
     ////////////////////////////////////////////
-    let os, browser, device;
-    //////////////////////////////////////////
     var session, createWS = function () {
         wsReady = false;
         ws = new WebSocket("ws://ws.sa.sbd.vn:10080");
@@ -16,9 +14,7 @@
                 type: "initWS",
                 session: session,
                 data: {
-                    os: os,
-                    browser: browser,
-                    device: device
+
                 },
                 callback: function (resp) {
                     if (resp.status === "OK")
@@ -97,7 +93,6 @@
             let obj = {
                 localId: "HTML5-" + Date.now() + "-" + Math.floor(Math.random() * 999999),
                 video: video,
-                loadInfo: [],
                 loadComplete: false,
                 playing: false,
                 buffering: false,
@@ -109,7 +104,9 @@
                 lastPauseTime: 0,
                 endView: false,
                 loaded: false,
-                workerInterval: 0
+                afterInit: [],
+                lastEvent: null,
+                hasStartup: false
             };
             mapping[obj.localId] = obj;
             let initView = function () {
@@ -119,25 +116,46 @@
                         envKey: opts.envKey,
                         viewerId: opts.viewerId,
                         playUrl: video.currentSrc,
-                        video: opts.video
+                        video: opts.video,
+                        date: new Date()
                     },
                     callback: function (resp) {
                         console.log(resp);
                         if (resp.status === "OK") {
                             obj.viewId = resp.data[0].id;
-                            if (!obj.loaded) {
-                                obj.loaded = true;
-                                send({
-                                    type: "event",
-                                    data: {
-                                        viewId: obj.viewId,
-                                        eventName: "PLAYER_LOAD",
-                                    }
-                                });
+                            if (obj.afterInit.length) {
+                                for (let i = 0, evMsg; evMsg = obj.afterInit[i]; i++) {
+                                    evMsg.data.viewId = obj.viewId;
+                                    send(evMsg);
+                                }
+                                obj.afterInit = [];
                             }
                         }
                     }
                 });
+            }, sendViewEvent = function (evMsgData) {
+                let evMsg = {
+                    type: "event",
+                    data: evMsgData
+                };
+                evMsgData.date = evMsgData.date || new Date();
+                evMsgData.playPosition = evMsgData.playPosition || video.currentTime;
+                console.log(evMsgData);
+                if (obj.viewId) {
+                    evMsg.data.viewId = obj.viewId
+                    send(evMsg);
+                } else {
+                    obj.afterInit.push(evMsg);
+                }
+                obj.lastEvent = evMsgData.eventName;
+            }, playerLoaded = function () {
+                if (!obj.loaded) {
+                    obj.loaded = true;
+                    sendViewEvent({
+                        eventName: "PLAYER_LOAD"
+                    });
+                }
+                clearInterval(interval);
             };
 
             initView();
@@ -145,189 +163,124 @@
             console.log("[SaoBacDau SA] Start to track video", video);
 
             // listen events
-            video.addEventListener("loadeddata", function (event) {
-                obj.loadInfo.push({
-                    loaded: 0,
-                    time: Date.now()
-                });
-            });
-            video.addEventListener("progress", function (event) {
-                console.log(event);
-                try {
-                    video.buffered.end(0);
-                } catch (e) {
-                    // invalid
-                    return;
-                }
 
-                let rate = video.buffered.end(0) / video.duration;
-                if (obj.loadInfo.length > 0) {
-                    rate -= obj.loadInfo[obj.loadInfo.length - 1].loaded;
-                }
-                obj.loadInfo.push({
-                    loaded: video.buffered.end(0) / video.duration,
-                    time: Date.now()
+            // check PLAYER_LOAD
+            if (video.readyState >= 2) {
+                playerLoaded();
+            } else {
+                video.addEventListener("canplay", playerLoaded());
+            }
+
+            // measure STARTUP_TIME & get UNPAUSE event
+            video.addEventListener("play", function (event) {
+                console.log(event);
+                sendViewEvent({
+                    eventName: "PLAY"
                 });
-//                sendEvent({
-//                    viewId: obj.viewId,
-//                    eventName: "LOAD_RATE",
-//                    data: rate,
-//                    playPosition: video.currentTime
-//                });
-                obj.loadComplete = (video.buffered.end(0) >= video.duration);
+                obj.lastActive = Date.now();
+                obj.playing = true;
+                obj.buffering = false;
             });
+
+            // on playing => STARTUP_TIME
+            video.addEventListener("playing", function (event) {
+                console.log(event);
+                let startupTime = (Date.now() - obj.lastActive) / 1000.0;
+                obj.lastActive = 0;
+                obj.hasStartup = true;
+                sendViewEvent({
+                    eventName: "PLAYING",
+                    data: startupTime
+                });
+                obj.lastPauseTime = 0;
+            });
+
+            // BUFFERING
             video.addEventListener("waiting", function (event) {
                 console.log(event);
                 obj.buffering = true;
-                obj.lastBuffering = Date.now();
-                obj.lastPlayPosition = video.currentTime;
-                send({
-                    type: "event",
-                    data: {
-                        viewId: obj.viewId,
-                        eventName: "BUFFERING",
-                        playPosition: video.currentTime
-                    }
-                });
-                obj.workerInterval = setInterval(bufferWorker, 5);
-            });
-            video.addEventListener("play", function (event) {
-                console.log(event);
-                if (obj.lastPauseTime > 0 && video.currentTime > 0 && !obj.playing) {
-                    send({
-                        type: "event",
-                        data: {
-                            viewId: obj.viewId,
-                            eventName: "UNPAUSE",
-                            playPosition: obj.lastPauseTime
-                        }
-                    });
-                }
-                obj.playing = true;
-                obj.buffering = false;
                 obj.lastActive = Date.now();
-
-                if (obj.lastPlayPosition === 0) {
-                    obj.workerInterval = setInterval(startupWorker, 5);
-                }
+                obj.lastPlayPosition = video.currentTime;
+                sendViewEvent({
+                    eventName: "BUFFERING"
+                });
             });
 
+            // PAUSE
             let pauseTimeout = 0;
             video.addEventListener("pause", function (event) {
                 console.log(event);
                 obj.playing = false;
                 obj.lastPauseTime = video.currentTime;
-                pauseTimeout = setTimeout(function () {
-                    send({
-                        type: "event",
-                        data: {
-                            viewId: obj.viewId,
-                            eventName: "PAUSE",
-                            playPosition: obj.lastPauseTime
-                        }
-                    });
-                }, 50);
+                var evData = {
+                    eventName: "PAUSE",
+                    date: new Date()
+                };
+                pauseTimeout = setTimeout(() => {
+                    sendViewEvent(evData);
+                }, 100);
 
-                clearInterval(obj.workerInterval);
             });
+
+            // SEEK
+            video.addEventListener("seeked", function (event) {
+                console.log(event);
+                clearTimeout(pauseTimeout);
+                sendViewEvent({
+                    eventName: "SEEKED"
+                });
+            });
+
+            // END
             video.addEventListener("ended", function (event) {
                 console.log(event);
                 clearTimeout(pauseTimeout);
-                send({
-                    type: "event",
-                    data: {
-                        viewId: obj.viewId,
-                        eventName: "END"
-                    }
+                sendViewEvent({
+                    eventName: "END"
                 });
-
+                obj.lastPauseTime = 0;
                 obj.lastPlayPosition = 0;
                 obj.playing = false;
                 obj.buffering = false;
                 obj.viewId = null;
                 obj.endView = true;
-
-
             });
+
             video.addEventListener("error", function (event) {
+                console.log(event);
                 obj.lastPlayPosition = video.currentTime;
                 obj.playing = false;
                 obj.buffering = false;
-                send({
-                    type: "event",
-                    data: {
-                        viewId: obj.viewId,
-                        eventName: "ERROR",
-                        playPosition: video.currentTime
-                    }
+                sendViewEvent({
+                    eventName: "ERROR"
                 });
             });
 
-            let startupWorker = function () {
-                if (video.currentTime > obj.lastPlayPosition) {
-                    if (obj.lastPlayPosition == 0){
-						if (obj.viewId){
-							send({
-								type: "event",
-								data: {
-									viewId: obj.viewId,
-									eventName: "PLAY",
-									data: (Date.now() - obj.lastActive) / 1000.0,
-									playPosition: 0
-								}
-							});
-						} else {
-							send({
-								type: "initView",
-								data: {
-									envKey: opts.envKey,
-									viewerId: opts.viewerId,
-									playUrl: video.currentSrc,
-									video: opts.video
-								},
-								callback: function(resp){
-									if (resp.status === "OK") {
-										obj.viewId = resp.data[0].id;
-										send({
-											type: "event",
-											data: {
-												viewId: obj.viewId,
-												eventName: "RESUME",
-												data: (Date.now() - obj.lastBuffering) / 1000.0,
-												playPosition: video.currentTime
-											}
-										});
-									}
-								}
-							});
-						}
-					}
-                    clearInterval(obj.workerInterval);
-                    obj.lastPlayPosition = video.currentTime;
+            // wait for load
+            var interval = setInterval(function () {
+                if (video.networkState === 3 && navigator.onLine) {
+                    console.log("ERROR 404 LINK")
+                    clearInterval(interval);
+                    sendViewEvent({
+                        eventName: "ERROR",
+                        infos: {
+                            type: "SOURCE_ERROR"
+                        }
+                    });
                 }
-            };
+            }, 500);
 
-            let bufferWorker = function () {
-				if (obj.endView)
-					clearInterval(obj.workerInterval);
-                if (video.currentTime > obj.lastPlayPosition) {
-                    if (obj.playing && obj.lastBuffering && Date.now() - obj.lastBuffering > 100) {
-						obj.lastBuffering = 0;
-						if (!obj.viewId){
-							return;
-						}
-                        send({
-                            type: "event",
-                            data: {
-                                viewId: obj.viewId,
-                                eventName: "RESUME",
-                                data: (Date.now() - obj.lastBuffering) / 1000.0,
-                                playPosition: video.currentTime
-                            }
-                        });
-                        
+
+            // exports
+            return {
+                trigger: function (eventName, data) {
+                    let evMsg = {
+                        eventName: eventName
+                    };
+                    for (let a in data) {
+                        evMsg.data[a] = data[a];
                     }
-                    
+                    sendViewEvent(evMsg);
                 }
             };
         }
@@ -342,8 +295,7 @@
             }
             switch (opts.player.type) {
                 case "HTML5":
-                    HTML5Adapter.init(opts);
-                    break;
+                    return HTML5Adapter.init(opts);
             }
 
         }

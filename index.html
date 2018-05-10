@@ -10,7 +10,7 @@
     <body>
         <video id="my-video" class="video-js" controls width="640" height="264"
                data-setup="{}">
-            <source src="http://www.sample-videos.com/video/mp4/720/big_buck_bunny_720p_2mb.mp4?1234" type='video/mp4'>
+            <source src="https://www.sample-videos.com/video/mp4/720/big_buck_bunny_720p_10mb.mp4" type='video/mp4'>
             <p class="vjs-no-js">
                 To view this video please enable JavaScript, and consider upgrading to a web browser that
                 <a href="http://videojs.com/html5-video-support/" target="_blank">supports HTML5 video</a>
@@ -21,19 +21,18 @@
         <script src="js/sbd-stream-analyzer.js"></script>
         <script type="text/javascript">
             SBDSA && SBDSA.init({
-                envKey: "18f5ddc4ac792729ff4242db",
+                envKey: "5af3429dc4a4727422eb374d",
                 viewerId: "GUEST",
                 player: {
                     type: "HTML5",
                     target: document.getElementById('my-video'),
                 },
                 video: {
-                    id: "123458",
-                    title: "Titanic",
-                    series: "Weekend films",
-                    duration: 6000,
+                    id: "1002",
+                    title: "Test video",
+                    duration: 30,
                     filters: {
-                        author: "Leo",
+                        author: "Nicolas",
                         cdn: "CloudFlare",
                         isp: "Viettel"
                     }
