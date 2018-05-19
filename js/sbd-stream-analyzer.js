@@ -6,7 +6,7 @@
     ////////////////////////////////////////////
     var session, createWS = function () {
         wsReady = false;
-        ws = new WebSocket("ws://ws.sa.sbd.vn:10080");
+        ws = new WebSocket("ws://ws.stag-sa.sbd.vn:10080");
         ws.onopen = function () {
             wsReady = true;
             console.log("[ WS ] Connected!");
