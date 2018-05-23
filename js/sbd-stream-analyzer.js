@@ -56,6 +56,8 @@
         if (input.data && !(typeof input.data === "string")) {
             input.data = JSON.stringify(input.data);
         }
+
+        console.log('data to send ' + JSON.stringify([input]));
         if (input.type === "initWS") {
             ws.send(JSON.stringify([input]));
         } else {
@@ -140,7 +142,7 @@
                 };
                 evMsgData.date = evMsgData.date || new Date();
                 evMsgData.playPosition = evMsgData.playPosition || video.currentTime;
-                console.log(evMsgData);
+                // console.log(evMsgData);
                 if (obj.viewId) {
                     evMsg.data.viewId = obj.viewId
                     send(evMsg);
@@ -173,7 +175,7 @@
 
             // measure STARTUP_TIME & get UNPAUSE event
             video.addEventListener("play", function (event) {
-                console.log(event);
+                // console.log(event);
                 sendViewEvent({
                     eventName: "PLAY"
                 });
@@ -184,7 +186,7 @@
 
             // on playing => STARTUP_TIME
             video.addEventListener("playing", function (event) {
-                console.log(event);
+                // console.log(event);
                 let startupTime = (Date.now() - obj.lastActive) / 1000.0;
                 obj.lastActive = 0;
                 obj.hasStartup = true;
@@ -197,7 +199,7 @@
 
             // BUFFERING
             video.addEventListener("waiting", function (event) {
-                console.log(event);
+                // console.log(event);
                 obj.buffering = true;
                 obj.lastActive = Date.now();
                 obj.lastPlayPosition = video.currentTime;
@@ -209,7 +211,7 @@
             // PAUSE
             let pauseTimeout = 0;
             video.addEventListener("pause", function (event) {
-                console.log(event);
+                // console.log(event);
                 obj.playing = false;
                 obj.lastPauseTime = video.currentTime;
                 var evData = {
@@ -224,7 +226,7 @@
 
             // SEEK
             video.addEventListener("seeked", function (event) {
-                console.log(event);
+                // console.log(event);
                 clearTimeout(pauseTimeout);
                 sendViewEvent({
                     eventName: "SEEKED"
@@ -233,7 +235,7 @@
 
             // END
             video.addEventListener("ended", function (event) {
-                console.log(event);
+                // console.log(event);
                 clearTimeout(pauseTimeout);
                 sendViewEvent({
                     eventName: "END"
@@ -247,7 +249,7 @@
             });
 
             video.addEventListener("error", function (event) {
-                console.log(event);
+                // console.log(event);
                 obj.lastPlayPosition = video.currentTime;
                 obj.playing = false;
                 obj.buffering = false;
